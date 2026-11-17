@@ -116,6 +116,8 @@ void Daemon::handle(QLocalSocket *socket) {
             reply = {{"ok", false}, {"error", tr("Unknown command: %1").arg(command)}};
         reply.insert("state", QVariant::fromValue(m_machine.state()).toString());
         reply.insert("recording", m_backend->recordingState());
+        reply.insert("overlayVisible", m_backend->overlayVisible());
+        reply.insert("overlayActive", m_backend->overlayActive());
         socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + "\n");
         socket->flush();
     }
