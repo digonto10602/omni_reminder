@@ -7,4 +7,4 @@ superwhisper-bin) were already present, so none were added.
 
 | Date | Package | Version | Source | Why |
 | --- | --- | --- | --- | --- |
-| 2026-11-17 | omni-reminder | 0.1.0-1 | built locally from `pkgbuild/` (`makepkg -f`, then `pkexec pacman -U`) | the app itself, so it is on PATH and in the app launcher. Pending: the pkexec password prompt had not been answered yet |
+| 2026-11-17 | omni-reminder | 0.1.0-1 | built locally from `pkgbuild/` (`makepkg -f`, then `pkexec pacman -U`) | the app itself, so it is on PATH and in the app launcher |
