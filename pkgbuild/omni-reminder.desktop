@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Omni Reminder
+Name[bn]=অমনি রিমাইন্ডার
+Comment=Reminders in a see-through overlay, with hold-to-record voice memos
+Comment[bn]=স্বচ্ছ ওভারলেতে রিমাইন্ডার, চেপে ধরে ভয়েস মেমো
+Exec=omni-reminder open
+Icon=omni-reminder
+Terminal=false
+Categories=Utility;
+StartupWMClass=omni-reminder

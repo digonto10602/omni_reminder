@@ -1,0 +1,15 @@
+/build/
+/pkgbuild/pkg/
+/pkgbuild/src/
+*.pkg.tar.*
+*.log
+
+# Never commit audio or personal data.
+*.ogg
+*.opus
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.webm
+reminders.json

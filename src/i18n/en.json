@@ -1,0 +1,5 @@
+{
+  "%n reminders": { "one": "%n reminder", "other": "%n reminders" },
+  "in %n min": { "one": "in %n min", "other": "in %n min" },
+  "in %n h": { "one": "in %n h", "other": "in %n h" }
+}

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Builds the Arch package and installs it, so omni-reminder lands in the app
+# launcher. makepkg itself never needs root; pacman asks for the password
+# through pkexec (a graphical prompt) when no terminal can take it.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+cd "$ROOT/pkgbuild"
+makepkg -f "$@"
+PACKAGE="$(ls -t omni-reminder-[0-9]*.pkg.tar.zst | head -n1)"
+if [ -t 0 ]; then
+  sudo pacman -U --noconfirm "$PACKAGE"
+else
+  pkexec pacman -U --noconfirm "$ROOT/pkgbuild/$PACKAGE"
+fi
