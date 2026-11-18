@@ -220,6 +220,16 @@ ApplicationWindow {
     }
     Shortcut { sequences: ["Space", "P"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.togglePlay() }
     Shortcut { sequences: ["R"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: backend.toggleRecording() }
+    Shortcut {
+        sequences: ["X"]
+        context: Qt.ApplicationShortcut
+        enabled: !win.typing && win.selectedId > 0
+        onActivated: {
+            const item = win.items.find(i => i.id === win.selectedId)
+            if (item)
+                backend.setDone(item.id, !item.done)
+        }
+    }
     Shortcut { sequences: [StandardKey.Undo]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: backend.undo() }
     Shortcut { sequences: [StandardKey.Redo, "Ctrl+Shift+Z"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: backend.redo() }
     Shortcut {
@@ -277,6 +287,15 @@ ApplicationWindow {
                         Layout.alignment: Qt.AlignBaseline
                     }
                     Item { Layout.fillWidth: true }
+                    // Google sync: quiet when fine, red when it needs attention.
+                    Label {
+                        visible: backend.syncStatus !== ""
+                        text: backend.syncStatus
+                        color: backend.syncProblem ? win.errorColor : "#9a9aa2"
+                        font.pixelSize: 13
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: 420
+                    }
                     Label {
                         text: qsTr("Press ? for shortcuts")
                         color: "#9a9aa2"
@@ -428,8 +447,8 @@ ApplicationWindow {
                         confirming: modelData.id === win.confirmId
                         playing: modelData.clipUrl === win.playingUrl && player.playbackState === MediaPlayer.PlayingState
                         dueLabel: modelData.hasDue ? win.formatDue(modelData.dueMs) : ""
-                        relativeLabel: modelData.hasDue ? win.relativeDue(modelData.dueMs) : ""
-                        overdue: modelData.hasDue && modelData.dueMs <= win.now
+                        relativeLabel: modelData.hasDue && !modelData.done ? win.relativeDue(modelData.dueMs) : ""
+                        overdue: modelData.hasDue && !modelData.done && modelData.dueMs <= win.now
                         clipLabel: win.formatSeconds(modelData.clipSeconds)
                         formatDue: win.formatDue
                         onPicked: win.select(index)
@@ -469,7 +488,7 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     text: win.confirmId
                           ? qsTr("Remove this reminder? Enter or Delete removes it, Esc keeps it.")
-                          : qsTr("N new · Enter edit · Delete remove · Space play · R record · Ctrl+Z undo · Esc close")
+                          : qsTr("N new · Enter edit · X done · Delete remove · Space play · R record · Ctrl+Z undo · Esc close")
                 }
             }
         }
@@ -501,6 +520,7 @@ ApplicationWindow {
                             ["N", qsTr("New reminder")],
                             ["↑ ↓ / K J", qsTr("Move the selection")],
                             ["Enter / E", qsTr("Edit the selected reminder")],
+                            ["X", qsTr("Mark it done, or not done again")],
                             ["Delete / D", qsTr("Remove it (asks first)")],
                             ["Space / P", qsTr("Play or pause its voice clip")],
                             ["R", qsTr("Start or stop a voice memo")],

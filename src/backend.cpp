@@ -85,6 +85,7 @@ bool Backend::mutate(const std::function<bool(Store &)> &change, bool undoable) 
         return false;
     }
     if (changed && undoable) {
+        emit localChanged();
         m_undo.append(before);
         while (m_undo.size() > UndoDepth)
             m_undo.removeFirst();
@@ -101,6 +102,8 @@ bool Backend::mutate(const std::function<bool(Store &)> &change, bool undoable) 
 void Backend::refresh() {
     QList<Reminder> sorted = m_store.reminders;
     std::stable_sort(sorted.begin(), sorted.end(), [](const Reminder &a, const Reminder &b) {
+        if (a.done != b.done)
+            return !a.done;
         if (a.due.isValid() != b.due.isValid())
             return a.due.isValid();
         if (a.due.isValid())
@@ -121,6 +124,7 @@ void Backend::refresh() {
             {"clipUrl", path.isEmpty() ? QString() : QUrl::fromLocalFile(path).toString()},
             {"clipSeconds", r.clipSeconds},
             {"clipExpired", r.clipExpired},
+            {"done", r.done},
         });
     }
     emit remindersChanged();
@@ -174,6 +178,7 @@ bool Backend::update(int id, const QString &text, const QString &dueText) {
         if (r->text == trimmed && !dueChanged)
             return false;
         r->text = trimmed;
+        r->updated = QDateTime::currentDateTimeUtc();
         if (dueChanged) {
             r->due = due;
             // A new time is a new promise: notify again when it comes.
@@ -202,6 +207,40 @@ bool Backend::remove(int id) {
     }, true);
 }
 
+// An undo is a new edit as far as the phone is concerned: whatever it brings
+// back must count as newer than what it replaces.
+QList<Reminder> Backend::stamped(QList<Reminder> target, const QList<Reminder> &current) {
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (Reminder &r : target) {
+        bool same = false;
+        for (const Reminder &c : current)
+            if (c.uid == r.uid)
+                same = c.text == r.text && c.due == r.due && c.done == r.done;
+        if (!same)
+            r.updated = now;
+    }
+    return target;
+}
+
+bool Backend::setDone(int id, bool done) {
+    return mutate([&](Store &store) {
+        Reminder *r = store.find(id);
+        if (!r || r->done == done)
+            return false;
+        r->done = done;
+        r->updated = QDateTime::currentDateTimeUtc();
+        return true;
+    }, true);
+}
+
+void Backend::setSyncStatus(const QString &status, bool problem) {
+    if (status == m_syncStatus && problem == m_syncProblem)
+        return;
+    m_syncStatus = status;
+    m_syncProblem = problem;
+    emit syncStatusChanged();
+}
+
 void Backend::undo() {
     if (m_undo.isEmpty())
         return;
@@ -210,12 +249,13 @@ void Backend::undo() {
     QString error;
     if (!m_store.update([&](Store &store) {
             current = store.reminders;
-            store.reminders = target;
+            store.reminders = stamped(target, current);
             return true;
         }, &error)) {
         showMessage(error, true);
         return;
     }
+    emit localChanged();
     m_redo.append(current);
     emit undoChanged();
     rememberFile();
@@ -231,12 +271,13 @@ void Backend::redo() {
     QString error;
     if (!m_store.update([&](Store &store) {
             current = store.reminders;
-            store.reminders = target;
+            store.reminders = stamped(target, current);
             return true;
         }, &error)) {
         showMessage(error, true);
         return;
     }
+    emit localChanged();
     m_undo.append(current);
     emit undoChanged();
     rememberFile();

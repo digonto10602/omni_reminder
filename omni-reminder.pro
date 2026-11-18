@@ -1,6 +1,6 @@
 QT += core gui qml quick quickcontrols2 multimedia network
 
-CONFIG += c++17 release
+CONFIG += c++17 release exceptions
 TARGET = omni-reminder
 TEMPLATE = app
 
@@ -8,6 +8,8 @@ HEADERS += \
     src/backend.h \
     src/cli.h \
     src/daemon.h \
+    src/googleapi.h \
+    src/googlesync.h \
     src/holdmachine.h \
     src/ipc.h \
     src/recorder.h \
@@ -23,6 +25,8 @@ SOURCES += \
     src/backend.cpp \
     src/cli.cpp \
     src/daemon.cpp \
+    src/googleapi.cpp \
+    src/googlesync.cpp \
     src/holdmachine.cpp \
     src/ipc.cpp \
     src/recorder.cpp \

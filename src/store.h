@@ -11,6 +11,10 @@
 // (retention deletes the audio) while the reminder itself stays.
 struct Reminder {
     int id = 0;
+    // A stable identity that survives renumbering and is safe to share with
+    // Google: 32 characters of base32hex (a-v, 0-9), the alphabet Calendar
+    // accepts for event ids we choose ourselves.
+    QString uid;
     QString text;
     QDateTime created;
     QDateTime due;            // invalid when the reminder has no time
@@ -19,6 +23,10 @@ struct Reminder {
     QDateTime clipRecorded;   // when the clip was recorded (retention clock)
     double clipSeconds = 0;
     bool clipExpired = false; // there was a clip, retention removed it
+    bool done = false;        // ticked off (here or on the phone)
+    // When the text, due time, or done flag last changed; the newer side
+    // wins when the phone and this computer both changed a reminder.
+    QDateTime updated;
 
     QJsonObject toJson() const;
     static Reminder fromJson(const QJsonObject &object);
@@ -50,10 +58,14 @@ public:
 
     QList<Reminder> reminders;
     int nextId = 1;
+    // load() filled in fields an older file lacked (uid, updated); they are
+    // random or guessed, so they must be saved before anyone relies on them.
+    bool upgraded = false;
 
     Reminder *find(int id);
     int add(Reminder reminder); // assigns the id and returns it
 
+    static QString newUid();
     static QString isoString(const QDateTime &time);
     static QDateTime parseIso(const QString &text);
 

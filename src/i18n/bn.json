@@ -1,6 +1,11 @@
 {
-  "Add": "যোগ করুন",
+  "%n reminders": {
+    "one": "%nটি রিমাইন্ডার",
+    "other": "%nটি রিমাইন্ডার"
+  },
+  "(voice memo attached)": "(ভয়েস মেমো সংযুক্ত)",
   "A reminder needs some text. Press Delete to remove it instead.": "রিমাইন্ডারে কিছু লেখা লাগবে। মুছতে চাইলে Delete চাপুন।",
+  "Add": "যোগ করুন",
   "Cancel": "বাতিল",
   "Cannot play the clip: %1": "ক্লিপটি চালানো যাচ্ছে না: %1",
   "Cannot read \"%1\" as a time. Try 18:30, tomorrow 9:00, +2h, or 2026-12-01 14:00.": "\"%1\" সময় হিসেবে পড়া গেল না। চেষ্টা করুন 18:30, tomorrow 9:00, +2h, অথবা 2026-12-01 14:00।",
@@ -9,18 +14,25 @@
   "Close the overlay": "ওভারলে বন্ধ করুন",
   "Could not show a notification: %1 is missing.": "নোটিফিকেশন দেখানো গেল না: %1 নেই।",
   "Discard": "ফেলে দিন",
+  "done": "সম্পন্ন",
   "Due %1": "সময় %1",
   "Edit the selected reminder": "নির্বাচিত রিমাইন্ডার সম্পাদনা করুন",
-  "in %n h": { "one": "%n ঘণ্টা পরে", "other": "%n ঘণ্টা পরে" },
-  "in %n min": { "one": "%n মিনিট পরে", "other": "%n মিনিট পরে" },
+  "in %n h": {
+    "one": "%n ঘণ্টা পরে",
+    "other": "%n ঘণ্টা পরে"
+  },
+  "in %n min": {
+    "one": "%n মিনিট পরে",
+    "other": "%n মিনিট পরে"
+  },
+  "Mark it done, or not done again": "সম্পন্ন চিহ্নিত করুন, বা আবার অসম্পন্ন",
   "Move the selection": "নির্বাচন সরান",
+  "N new · Enter edit · X done · Delete remove · Space play · R record · Ctrl+Z undo · Esc close": "N নতুন · Enter সম্পাদনা · X সম্পন্ন · Delete মুছুন · Space চালান · R রেকর্ড · Ctrl+Z আগের অবস্থা · Esc বন্ধ",
   "New reminder": "নতুন রিমাইন্ডার",
   "New reminder (N)": "নতুন রিমাইন্ডার (N)",
-  "N new · Enter edit · Delete remove · Space play · R record · Ctrl+Z undo · Esc close": "N নতুন · Enter সম্পাদনা · Delete মুছুন · Space চালান · R রেকর্ড · Ctrl+Z আগের অবস্থা · Esc বন্ধ",
   "No audio was recorded. %1": "কোনো অডিও রেকর্ড হয়নি। %1",
   "No due time": "কোনো সময় নেই",
   "No reminders yet. Press N to write one, or hold Ctrl+Shift+Alt+R and speak.": "এখনো কোনো রিমাইন্ডার নেই। লিখতে N চাপুন, অথবা Ctrl+Shift+Alt+R চেপে ধরে বলুন।",
-  "%n reminders": { "one": "%nটি রিমাইন্ডার", "other": "%nটি রিমাইন্ডার" },
   "overdue": "সময় পেরিয়ে গেছে",
   "Play or pause its voice clip": "ভয়েস ক্লিপ চালান বা থামান",
   "Press ? for shortcuts": "শর্টকাট দেখতে ? চাপুন",
@@ -40,11 +52,10 @@
   "Superwhisper heard no speech.": "Superwhisper কোনো কথা শোনেনি।",
   "Tap: show or hide reminders. Hold: record a voice memo": "একবার চাপুন: রিমাইন্ডার দেখান বা লুকান। চেপে ধরুন: ভয়েস মেমো রেকর্ড",
   "The new reminder opens when it is done": "শেষ হলে নতুন রিমাইন্ডার খুলবে",
-  "Transcribing…": "লেখায় রূপান্তর হচ্ছে…",
   "Transcribing the voice memo…": "ভয়েস মেমো লেখায় রূপান্তর হচ্ছে…",
+  "Transcribing…": "লেখায় রূপান্তর হচ্ছে…",
   "Undo / redo": "আগের অবস্থা / আবার করুন",
   "Voice memo %1": "ভয়েস মেমো %1",
-  "(voice memo attached)": "(ভয়েস মেমো সংযুক্ত)",
   "When? (empty for none)": "কখন? (না চাইলে খালি রাখুন)",
   "When? (optional)": "কখন? (ঐচ্ছিক)",
   "Write something to remember first.": "আগে মনে রাখার মতো কিছু লিখুন।"

@@ -11,6 +11,9 @@
 
 #include "backend.h"
 #include "daemon.h"
+#include "fakegoogle.h"
+#include "googleapi.h"
+#include "googlesync.h"
 #include "holdmachine.h"
 #include "ipc.h"
 #include "retention.h"
@@ -21,6 +24,73 @@
 #include "translator.h"
 
 static constexpr qint64 MB = 1000 * 1000;
+
+// One computer and one Google account: a data directory, a config directory
+// with a client file and a stored sign-in, and a fake Google.
+struct SyncRig {
+    QTemporaryDir data, config;
+    FakeGoogle google;
+    std::unique_ptr<Sync::Engine> engine;
+
+    SyncRig() {
+        qputenv("OMNI_REMINDER_CONFIG_DIR", config.path().toUtf8());
+        qputenv("OMNI_REMINDER_TOKEN_STORE", "file");
+        qputenv("OMNI_REMINDER_GOOGLE_BASE", google.base().toUtf8());
+        QFile client(config.filePath("google-client.json"));
+        if (!client.open(QIODevice::WriteOnly))
+            qFatal("cannot write the test client file");
+        client.write(R"({"installed":{"client_id":"test-client.apps.googleusercontent.com",)"
+                     R"("client_secret":"test-secret","redirect_uris":["http://localhost"]}})");
+        client.close();
+        Google::TokenStore("file").save("refresh-1", nullptr);
+        engine = std::make_unique<Sync::Engine>(data.path(), Google::Endpoints::fromEnvironment());
+    }
+    // The engine keeps its access token between passes, like the daemon's.
+    Sync::Status sync() { return engine->run(); }
+
+    QList<Reminder> local() {
+        Store store(data.path());
+        store.load();
+        return store.reminders;
+    }
+    Reminder find(const QString &text) {
+        for (const Reminder &r : local())
+            if (r.text == text)
+                return r;
+        return {};
+    }
+    void add(const QString &text, const QDateTime &due = {}) {
+        Store(data.path()).update([&](Store &s) {
+            Reminder r;
+            r.text = text;
+            r.due = due;
+            s.add(r);
+            return true;
+        });
+    }
+    // Changes one reminder here the way the overlay does, stamping the time.
+    void edit(const QString &text, const std::function<void(Reminder &)> &change, const QDateTime &at = {}) {
+        Store(data.path()).update([&](Store &s) {
+            for (Reminder &r : s.reminders)
+                if (r.text == text) {
+                    change(r);
+                    r.updated = at.isValid() ? at : QDateTime::currentDateTimeUtc();
+                }
+            return true;
+        });
+    }
+    void removeAll() {
+        Store(data.path()).update([](Store &s) { s.reminders.clear(); return true; });
+    }
+    int writes() {
+        QMutexLocker lock(&google.mutex());
+        int n = 0;
+        for (const FakeGoogle::Request &r : google.requests)
+            if (r.method != "GET" && r.path != "/token")
+                ++n;
+        return n;
+    }
+};
 
 class OmniReminderTests : public QObject {
     Q_OBJECT
@@ -630,6 +700,465 @@ private slots:
         Translator english(dir.path() + "/none", catalogs);
         QCOMPARE(english.translate("Main", "%n reminders", nullptr, 1), QString("%n reminder"));
         QCOMPARE(english.translate("Main", "%n reminders", nullptr, 3), QString("%n reminders"));
+    }
+
+    // ---------- Google sync (against tests/fakegoogle.h) ----------
+
+    void syncPushesTimedToCalendarAndUntimedToTasks()
+    {
+        SyncRig rig;
+        const QDateTime due = QDateTime(QDate::currentDate().addDays(1), QTime(10, 0));
+        rig.add("Call the bank", due);
+        rig.add("Buy stamps");
+        const Sync::Status status = rig.sync();
+        QCOMPARE(status.state, QString("ok"));
+        QCOMPARE(status.pending, 0);
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            QVERIFY(rig.google.calendarNamed("Omni Reminder"));
+            QVERIFY(rig.google.listNamed("Omni Reminder"));
+            const QList<QJsonObject> events = rig.google.liveEvents();
+            QCOMPARE(events.size(), 1);
+            const QJsonObject e = events.first();
+            QCOMPARE(e.value("summary").toString(), QString("Call the bank"));
+            QCOMPARE(e.value("id").toString(), rig.find("Call the bank").uid);
+            QCOMPARE(QDateTime::fromString(e["start"]["dateTime"].toString(), Qt::ISODate).toSecsSinceEpoch(),
+                     due.toSecsSinceEpoch());
+            QCOMPARE(e["reminders"]["useDefault"].toBool(true), false);
+            QCOMPARE(e["reminders"]["overrides"][0]["method"].toString(), QString("popup"));
+            QCOMPARE(e["reminders"]["overrides"][0]["minutes"].toInt(-1), 0);
+            const QList<QJsonObject> tasks = rig.google.liveTasks();
+            QCOMPARE(tasks.size(), 1);
+            QCOMPARE(tasks.first().value("title").toString(), QString("Buy stamps"));
+            QVERIFY(!tasks.first().contains("due"));
+            // The user's own calendar and list were never touched.
+            for (const FakeGoogle::Request &r : rig.google.requests) {
+                QVERIFY2(!r.path.contains("/calendars/primary"), r.path.constData());
+                QVERIFY2(!r.path.contains("/lists/MyTasksId"), r.path.constData());
+            }
+            QCOMPARE(rig.google.calendars.first().events.size(), 1);
+            QCOMPARE(rig.google.lists.first().tasks.size(), 1);
+        }
+        // Nothing changed, so a second pass sends nothing.
+        const int before = rig.writes();
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.writes(), before);
+    }
+
+    void syncSendsLocalEditsAndRemovals()
+    {
+        SyncRig rig;
+        rig.add("Call the bank", QDateTime(QDate::currentDate().addDays(1), QTime(10, 0)));
+        rig.add("Buy stamps");
+        QCOMPARE(rig.sync().state, QString("ok"));
+        const QDateTime later = QDateTime(QDate::currentDate().addDays(2), QTime(16, 30));
+        rig.edit("Call the bank", [&](Reminder &r) { r.text = "Call the bank about the card"; r.due = later; });
+        rig.edit("Buy stamps", [](Reminder &r) { r.text = "Buy stamps and envelopes"; });
+        QCOMPARE(rig.sync().state, QString("ok"));
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            const QList<QJsonObject> events = rig.google.liveEvents();
+            QCOMPARE(events.size(), 1);
+            QCOMPARE(events.first().value("summary").toString(), QString("Call the bank about the card"));
+            QCOMPARE(QDateTime::fromString(events.first()["start"]["dateTime"].toString(), Qt::ISODate).toSecsSinceEpoch(),
+                     later.toSecsSinceEpoch());
+            QCOMPARE(rig.google.liveTasks().first().value("title").toString(), QString("Buy stamps and envelopes"));
+        }
+        rig.removeAll();
+        const Sync::Status status = rig.sync();
+        QCOMPARE(status.state, QString("ok"));
+        QCOMPARE(status.pending, 0);
+        QMutexLocker lock(&rig.google.mutex());
+        QVERIFY(rig.google.liveEvents().isEmpty());
+        QVERIFY(rig.google.liveTasks().isEmpty());
+    }
+
+    void syncBringsPhoneChangesHere()
+    {
+        SyncRig rig;
+        QCOMPARE(rig.sync().state, QString("ok")); // makes the calendar and the list
+        const QDateTime at = QDateTime(QDate::currentDate().addDays(1), QTime(15, 0));
+        const QString event = rig.google.phoneAddEvent("Pick up the parcel", at);
+        const QString task = rig.google.phoneAddTask("Call the plumber");
+        Sync::Status status = rig.sync();
+        QCOMPARE(status.state, QString("ok"));
+        QCOMPARE(status.pulled, 2);
+        QCOMPARE(rig.local().size(), 2);
+        const Reminder parcel = rig.find("Pick up the parcel");
+        QCOMPARE(parcel.due.toSecsSinceEpoch(), at.toSecsSinceEpoch());
+        QVERIFY(parcel.clip.isEmpty()); // from the phone: no clip
+        QCOMPARE(parcel.uid.size(), 32);
+        const Reminder plumber = rig.find("Call the plumber");
+        QVERIFY(!plumber.due.isValid());
+        QVERIFY(!plumber.done);
+        // What arrived does not bounce back.
+        int before = rig.writes();
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.writes(), before);
+
+        const QDateTime moved = at.addSecs(2 * 3600);
+        rig.google.phoneEditEvent(event, {{"summary", "Pick up the big parcel"},
+                                          {"start", QJsonObject{{"dateTime", moved.toUTC().toString(Qt::ISODate)}}}});
+        rig.google.phoneCompleteTask(task); // also hidden, as the Tasks app does
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.find("Pick up the big parcel").due.toSecsSinceEpoch(), moved.toSecsSinceEpoch());
+        QVERIFY(rig.find("Call the plumber").done);
+        before = rig.writes();
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.writes(), before);
+
+        rig.google.phoneDeleteEvent(event);
+        rig.google.phoneDeleteTask(task);
+        status = rig.sync();
+        QCOMPARE(status.state, QString("ok"));
+        QVERIFY(rig.local().isEmpty());
+        QCOMPARE(status.pending, 0);
+    }
+
+    void syncUpgradesAnOldFileOnceWithoutDuplicates()
+    {
+        SyncRig rig;
+        // reminders.json as 0.1 wrote it: no uid, no updated, no done.
+        write(rig.data.filePath("reminders.json"),
+              R"({"version":1,"nextId":3,"reminders":[)"
+              R"({"id":1,"text":"Old untimed","created":"2026-11-01T08:00:00.000Z","notified":false},)"
+              R"({"id":2,"text":"Old timed","created":"2026-11-01T08:00:00.000Z","due":"2030-01-02T10:00:00.000Z","notified":false}]})");
+        QCOMPARE(rig.sync().state, QString("ok"));
+        const QString uid = rig.find("Old timed").uid;
+        QCOMPARE(uid.size(), 32);
+        const int before = rig.writes();
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.writes(), before); // same ids the second time: nothing to send
+        QCOMPARE(rig.find("Old timed").uid, uid);
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveEvents().size(), 1);
+        QCOMPARE(rig.google.liveTasks().size(), 1);
+    }
+
+    void syncKeepsALocalEditOverAPhoneDeletion()
+    {
+        SyncRig rig;
+        rig.add("Water the plants");
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QString taskId;
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            taskId = rig.google.liveTasks().first().value("id").toString();
+        }
+        rig.google.phoneDeleteTask(taskId);
+        rig.edit("Water the plants", [](Reminder &r) { r.text = "Water the plants and the herbs"; });
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.local().size(), 1);
+        QMutexLocker lock(&rig.google.mutex());
+        const QList<QJsonObject> tasks = rig.google.liveTasks();
+        QCOMPARE(tasks.size(), 1);
+        QCOMPARE(tasks.first().value("title").toString(), QString("Water the plants and the herbs"));
+        QVERIFY(tasks.first().value("id").toString() != taskId);
+    }
+
+    void syncMovesBetweenCalendarAndTasks()
+    {
+        SyncRig rig;
+        rig.add("Renew the passport");
+        QCOMPARE(rig.sync().state, QString("ok"));
+        auto counts = [&] {
+            QMutexLocker lock(&rig.google.mutex());
+            return qMakePair(int(rig.google.liveEvents().size()), int(rig.google.liveTasks().size()));
+        };
+        QCOMPARE(counts(), qMakePair(0, 1));
+
+        const QDateTime due = QDateTime(QDate::currentDate().addDays(3), QTime(11, 15));
+        rig.edit("Renew the passport", [&](Reminder &r) { r.due = due; });
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(counts(), qMakePair(1, 0)); // timed: now an event
+
+        rig.edit("Renew the passport", [](Reminder &r) { r.due = {}; });
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(counts(), qMakePair(0, 1)); // untimed again: back to Tasks
+
+        // Back to timed: the cancelled event (same id) is brought back.
+        rig.edit("Renew the passport", [&](Reminder &r) { r.due = due; });
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(counts(), qMakePair(1, 0));
+
+        // Done: a completed task that keeps the date.
+        rig.edit("Renew the passport", [](Reminder &r) { r.done = true; });
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(counts(), qMakePair(0, 1));
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            const QJsonObject t = rig.google.liveTasks().first();
+            QCOMPARE(t.value("status").toString(), QString("completed"));
+            QCOMPARE(t.value("due").toString().left(10), due.date().toString(Qt::ISODate));
+        }
+        QVERIFY(rig.find("Renew the passport").due == due); // the time of day is kept here
+
+        // A task given a date on the phone becomes timed here (09:00) and
+        // moves to the calendar, where it gets a pop-up.
+        const QDate day = QDate::currentDate().addDays(5);
+        rig.google.phoneAddTask("Pay the rent", day);
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.find("Pay the rent").due, QDateTime(day, QTime(9, 0)));
+        QCOMPARE(counts(), qMakePair(1, 1));
+        QCOMPARE(rig.local().size(), 2);
+    }
+
+    void syncNewestEditWins()
+    {
+        SyncRig rig;
+        rig.add("Book flights");
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QString taskId;
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            taskId = rig.google.liveTasks().first().value("id").toString();
+        }
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+
+        // The phone's edit is newer: it wins here.
+        rig.edit("Book flights", [&](Reminder &r) { r.text = "Book flights (computer)"; }, now.addSecs(-30));
+        rig.google.phoneEditTask(taskId, {{"title", "Book flights (phone)"}}, now);
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.local().first().text, QString("Book flights (phone)"));
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            QCOMPARE(rig.google.liveTasks().first().value("title").toString(), QString("Book flights (phone)"));
+        }
+
+        // This computer's edit is newer: it wins there.
+        rig.google.phoneEditTask(taskId, {{"title", "Book trains (phone)"}}, now.addSecs(5));
+        rig.edit("Book flights (phone)", [&](Reminder &r) { r.text = "Book trains (computer)"; }, now.addSecs(10));
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.local().first().text, QString("Book trains (computer)"));
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveTasks().first().value("title").toString(), QString("Book trains (computer)"));
+    }
+
+    void syncKeepsEverythingWhileOffline()
+    {
+        SyncRig rig;
+        rig.add("First");
+        rig.google.offline = true;
+        Sync::Status status = rig.sync();
+        QCOMPARE(status.state, QString("offline"));
+        QCOMPARE(status.pending, 1);
+        rig.add("Second", QDateTime(QDate::currentDate().addDays(1), QTime(8, 0)));
+        status = rig.sync();
+        QCOMPARE(status.state, QString("offline"));
+        QCOMPARE(status.pending, 2);
+        QCOMPARE(rig.local().size(), 2); // nothing lost, nothing blocked
+        QCOMPARE(Sync::Status::load(rig.data.path()).state, QString("offline"));
+
+        rig.google.offline = false;
+        status = rig.sync();
+        QCOMPARE(status.state, QString("ok"));
+        QCOMPARE(status.pending, 0);
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveTasks().size(), 1);
+        QCOMPARE(rig.google.liveEvents().size(), 1);
+    }
+
+    void syncControllerRetriesWithBackoffAndDebounces()
+    {
+        SyncRig rig;
+        rig.add("First");
+        rig.google.offline = true;
+        Sync::Controller controller(rig.data.path());
+        QSignalSpy passes(&controller, &Sync::Controller::passFinished);
+        QSignalSpy lines(&controller, &Sync::Controller::statusChanged);
+        controller.syncNow();
+        QTRY_VERIFY_WITH_TIMEOUT(passes.count() >= 1, 10000);
+        QCOMPARE(controller.status().state, QString("offline"));
+        QVERIFY(lines.last().at(0).toString().contains("offline"));
+        QVERIFY(lines.last().at(1).toBool()); // shown as a problem
+        const qint64 wait = QDateTime::currentDateTimeUtc().secsTo(controller.status().nextRetry);
+        QVERIFY2(wait >= 20 && wait <= 31, qPrintable(QString::number(wait))); // first retry after 30 s
+
+        rig.google.offline = false;
+        const int seen = passes.count();
+        controller.localChanged(); // debounced: one pass about 3 s later
+        controller.localChanged();
+        QTRY_VERIFY_WITH_TIMEOUT(passes.count() > seen, 10000);
+        QCOMPARE(controller.status().state, QString("ok"));
+        QVERIFY(lines.last().at(0).toString().startsWith("Google: synced"));
+        QVERIFY(!lines.last().at(1).toBool());
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveTasks().size(), 1);
+    }
+
+    void syncRefreshesTheAccessTokenAndAsksForLoginWhenRevoked()
+    {
+        SyncRig rig;
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.google.refreshCount, 1);
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            rig.google.accessToken = "expired-meanwhile"; // the cached one is now refused
+        }
+        rig.add("After expiry");
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.google.refreshCount, 2);
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            QCOMPARE(rig.google.liveTasks().size(), 1);
+            rig.google.revokeAll = true; // e.g. the 7-day limit of a Testing app
+            rig.google.accessToken = "expired-again";
+        }
+        rig.add("After revoke");
+        const Sync::Status status = rig.sync();
+        QCOMPARE(status.state, QString("needs-login"));
+        QCOMPARE(status.pending, 1);
+        QCOMPARE(rig.local().size(), 2);
+        QVERIFY(Sync::Controller::describe(status).contains("sync login"));
+    }
+
+    void syncNeverSendsClipData()
+    {
+        SyncRig rig;
+        const QDateTime now = QDateTime::currentDateTime();
+        Store store(rig.data.path());
+        QVERIFY(store.update([&](Store &s) {
+            Reminder timed = withClip("Voice memo one", "voice-20261117-101500.ogg", now);
+            timed.clipSeconds = 12.5;
+            timed.due = now.addDays(1);
+            s.add(timed);
+            Reminder untimed = withClip("Voice memo two", "voice-20261117-101600.ogg", now);
+            untimed.clipSeconds = 3.25;
+            s.add(untimed);
+            Reminder expired = withClip("Voice memo three", "", now);
+            expired.clipExpired = true;
+            s.add(expired);
+            return true;
+        }));
+        QCOMPARE(rig.sync().state, QString("ok"));
+        rig.edit("Voice memo one", [](Reminder &r) { r.done = true; });          // event -> task
+        rig.edit("Voice memo two", [&](Reminder &r) { r.due = now.addDays(2); }); // task -> event
+        QCOMPARE(rig.sync().state, QString("ok"));
+
+        static const QSet<QString> allowed{"id", "summary", "start", "end", "reminders", "transparency", "status",
+                                           "title", "due", "completed", "timeZone"};
+        QMutexLocker lock(&rig.google.mutex());
+        int jsonBodies = 0;
+        for (const FakeGoogle::Request &r : rig.google.requests) {
+            const QByteArray everything = r.path + "?" + r.query + "\n" + r.body;
+            for (const QByteArray &secret : {QByteArray("voice-2026"), QByteArray(".ogg"), QByteArray("clip"),
+                                             QByteArray("12.5"), QByteArray("3.25"), rig.data.path().toUtf8()})
+                QVERIFY2(!everything.contains(secret), everything.constData());
+            if (r.body.startsWith('{')) {
+                ++jsonBodies;
+                const QJsonObject body = QJsonDocument::fromJson(r.body).object();
+                for (const QString &key : body.keys())
+                    QVERIFY2(allowed.contains(key), qPrintable(key));
+            }
+        }
+        QCOMPARE(jsonBodies, rig.engine->sentBodies.size());
+        QVERIFY(jsonBodies >= 5);
+    }
+
+    void syncStartsOverWhenTheSyncTokenExpires()
+    {
+        SyncRig rig;
+        rig.add("Timed", QDateTime(QDate::currentDate().addDays(1), QTime(7, 0)));
+        QCOMPARE(rig.sync().state, QString("ok"));
+        rig.google.phoneAddEvent("From the phone", QDateTime(QDate::currentDate().addDays(1), QTime(12, 0)));
+        {
+            QMutexLocker lock(&rig.google.mutex());
+            rig.google.minSyncToken = 1 << 30; // every token is now too old: 410 Gone
+        }
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.local().size(), 2);
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveEvents().size(), 2);
+    }
+
+    void syncRecreatesItsCalendarWhenItIsDeleted()
+    {
+        SyncRig rig;
+        rig.add("Timed", QDateTime(QDate::currentDate().addDays(1), QTime(7, 0)));
+        QCOMPARE(rig.sync().state, QString("ok"));
+        rig.google.deleteOurCalendar();
+        QCOMPARE(rig.sync().state, QString("ok"));
+        QCOMPARE(rig.local().size(), 1); // removing the calendar is not removing the reminders
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveEvents().size(), 1);
+    }
+
+    void syncLoginUsesLoopbackAndPkce()
+    {
+        SyncRig rig;
+        Google::Client client;
+        QVERIFY(client.load(Google::Client::defaultPath(), nullptr));
+        QThread *browser = nullptr;
+        QUrl authUrl;
+        auto openWith = [&](bool rightState) {
+            return [&, rightState](const QUrl &url) {
+                authUrl = url;
+                const QUrlQuery q(url);
+                {
+                    QMutexLocker lock(&rig.google.mutex());
+                    rig.google.expectedChallenge = q.queryItemValue("code_challenge");
+                }
+                const QUrl redirect(q.queryItemValue("redirect_uri", QUrl::FullyDecoded));
+                const QString state = rightState ? q.queryItemValue("state") : QStringLiteral("forged");
+                // The "browser" follows Google's redirect back to the app.
+                browser = QThread::create([redirect, state] {
+                    QTcpSocket socket;
+                    socket.connectToHost(redirect.host(), redirect.port());
+                    if (!socket.waitForConnected(3000))
+                        return;
+                    socket.write("GET /?state=" + QUrl::toPercentEncoding(state) +
+                                 "&code=code-from-google&scope=x HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+                    socket.waitForBytesWritten(3000);
+                    socket.waitForReadyRead(3000);
+                });
+                browser->start();
+                return true;
+            };
+        };
+        Google::Tokens tokens = Google::login(Google::Endpoints::fromEnvironment(), client, openWith(true),
+                                              [](const QString &) {}, 10000);
+        browser->wait();
+        delete browser;
+        QVERIFY2(tokens.ok() && tokens.error.isEmpty(), qPrintable(tokens.error));
+        QCOMPARE(tokens.refresh, QString("refresh-1"));
+        const QUrlQuery q(authUrl);
+        QVERIFY(q.queryItemValue("redirect_uri", QUrl::FullyDecoded).startsWith("http://127.0.0.1:"));
+        QCOMPARE(q.queryItemValue("code_challenge_method"), QString("S256"));
+        QCOMPARE(q.queryItemValue("access_type"), QString("offline"));
+        QCOMPARE(q.queryItemValue("scope", QUrl::FullyDecoded),
+                 QString("https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/tasks"));
+
+        tokens = Google::login(Google::Endpoints::fromEnvironment(), client, openWith(false), [](const QString &) {}, 10000);
+        browser->wait();
+        delete browser;
+        QVERIFY(!tokens.ok());
+        QVERIFY(tokens.error.contains("state"));
+    }
+
+    void syncTokenFileIsPrivate()
+    {
+        SyncRig rig;
+        Google::TokenStore store("file");
+        QVERIFY(store.save("a-refresh-token", nullptr));
+        QCOMPARE(store.load(), QString("a-refresh-token"));
+        const QFile::Permissions p = QFile::permissions(Google::TokenStore::filePath());
+        QVERIFY(p & QFile::ReadOwner);
+        QVERIFY(!(p & (QFile::ReadGroup | QFile::WriteGroup | QFile::ReadOther | QFile::WriteOther)));
+        store.clear();
+        QVERIFY(store.load().isEmpty());
+        QVERIFY(!QFile::exists(Google::TokenStore::filePath()));
+    }
+
+    void doneRemindersDoNotNotify()
+    {
+        QTemporaryDir dir;
+        Backend backend(dir.path());
+        const int id = backend.add("past", "2020-01-01T08:00");
+        QVERIFY(id > 0);
+        QVERIFY(backend.setDone(id, true));
+        QVERIFY(Schedule::dueIds(backend.store().reminders, QDateTime::currentDateTime()).isEmpty());
+        QVERIFY(backend.setDone(id, false));
+        QCOMPARE(Schedule::dueIds(backend.store().reminders, QDateTime::currentDateTime()).size(), 1);
     }
 
 private:

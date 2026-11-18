@@ -13,3 +13,11 @@
 *.m4a
 *.webm
 reminders.json
+
+# Never commit Google credentials or sync state.
+google-client.json
+google-token.json
+client_secret*.json
+sync.json
+sync-status.json
+sync.lock

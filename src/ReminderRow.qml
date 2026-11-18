@@ -92,7 +92,8 @@ Item {
             visible: !row.editing
             text: row.item.text
             wrapMode: Text.Wrap
-            color: "white"
+            color: row.item.done ? "#8a8a92" : "white"
+            font.strikeout: row.item.done
             font.pixelSize: 17
         }
 
@@ -159,12 +160,18 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 14
-            visible: row.dueLabel !== "" || row.item.hasClip || row.item.clipExpired
+            visible: row.dueLabel !== "" || row.item.hasClip || row.item.clipExpired || row.item.done
 
             Label {
                 visible: row.dueLabel !== ""
                 text: row.relativeLabel !== "" ? row.dueLabel + " · " + row.relativeLabel : row.dueLabel
-                color: row.overdue ? "#ff8a8a" : theme.accent
+                color: row.item.done ? "#7c7c85" : row.overdue ? "#ff8a8a" : theme.accent
+                font.pixelSize: 13
+            }
+            Label {
+                visible: row.item.done
+                text: qsTr("done")
+                color: "#7c7c85"
                 font.pixelSize: 13
             }
             ToolButton {

@@ -10,7 +10,7 @@ namespace Schedule {
 QList<int> dueIds(const QList<Reminder> &reminders, const QDateTime &now) {
     QList<int> ids;
     for (const Reminder &reminder : reminders)
-        if (reminder.due.isValid() && !reminder.notified && reminder.due <= now)
+        if (reminder.due.isValid() && !reminder.notified && !reminder.done && reminder.due <= now)
             ids << reminder.id;
     return ids;
 }
@@ -18,7 +18,7 @@ QList<int> dueIds(const QList<Reminder> &reminders, const QDateTime &now) {
 qint64 msUntilNext(const QList<Reminder> &reminders, const QDateTime &now, qint64 cap) {
     qint64 best = -1;
     for (const Reminder &reminder : reminders) {
-        if (!reminder.due.isValid() || reminder.notified)
+        if (!reminder.due.isValid() || reminder.notified || reminder.done)
             continue;
         const qint64 wait = qMax<qint64>(0, now.msecsTo(reminder.due));
         if (best < 0 || wait < best)

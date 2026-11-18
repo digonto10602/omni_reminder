@@ -25,3 +25,8 @@ Each command exits 0 on success and 1 on failure with the reason on stderr.
 A reminder with a due time raises a desktop notification when it is due.
 Voice clips are deleted 30 days after recording or when all clips pass 100 MB
 (oldest first); the reminder stays and shows "clip expired".
+
+If the user connected Google (`omni-reminder sync status`), reminders also sync
+with their Google Calendar (timed) and Google Tasks (untimed) within minutes;
+only text, due time and done ever leave the computer. `omni-reminder sync now`
+syncs at once. Signing in (`sync login`) needs the user at a browser.

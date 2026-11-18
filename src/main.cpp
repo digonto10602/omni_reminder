@@ -14,11 +14,12 @@
 #include "backend.h"
 #include "cli.h"
 #include "daemon.h"
+#include "googlesync.h"
 #include "ipc.h"
 #include "theme.h"
 #include "translator.h"
 
-static const char *Version = "0.1.0";
+static const char *Version = "0.2.0";
 
 int main(int argc, char *argv[]) {
     // Taken before anything else, so a key press is timed as close to the
@@ -75,6 +76,16 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "omni-reminder: %s\n", qPrintable(error));
         return 1;
     }
+
+    // Google sync runs on its own thread; the overlay never waits for it.
+    Sync::Controller sync(backend.dataDirectory());
+    QObject::connect(&backend, &Backend::localChanged, &sync, &Sync::Controller::localChanged);
+    QObject::connect(&daemon, &Daemon::syncRequested, &sync, &Sync::Controller::syncNow);
+    QObject::connect(&sync, &Sync::Controller::statusChanged, &backend, &Backend::setSyncStatus);
+    QObject::connect(&sync, &Sync::Controller::passFinished, &backend, &Backend::reload);
+    backend.setSyncStatus(Sync::Controller::describe(sync.status()),
+                          sync.status().state != "ok" && sync.status().state != "not-configured" &&
+                              sync.status().state != "never");
 
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);

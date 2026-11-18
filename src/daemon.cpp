@@ -112,6 +112,14 @@ void Daemon::handle(QLocalSocket *socket) {
             m_machine.stop();
         else if (command == "reload")
             m_backend->reload();
+        else if (command == "changed") {
+            // The command line changed reminders.json: reload, sync soon.
+            m_backend->reload();
+            emit m_backend->localChanged();
+        } else if (command == "sync-now") {
+            m_backend->reload();
+            emit syncRequested();
+        }
         else if (command != "ping")
             reply = {{"ok", false}, {"error", tr("Unknown command: %1").arg(command)}};
         reply.insert("state", QVariant::fromValue(m_machine.state()).toString());

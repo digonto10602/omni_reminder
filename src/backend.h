@@ -24,6 +24,9 @@ class Backend : public QObject {
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY undoChanged)
     Q_PROPERTY(QString dataDirectory READ dataDirectory CONSTANT)
+    // One line on the Google sync, empty when it is not set up.
+    Q_PROPERTY(QString syncStatus READ syncStatus NOTIFY syncStatusChanged)
+    Q_PROPERTY(bool syncProblem READ syncProblem NOTIFY syncStatusChanged)
     // Whether the overlay window has keyboard focus; the window reports it.
     Q_PROPERTY(bool overlayActive READ overlayActive WRITE setOverlayActive NOTIFY overlayActiveChanged)
 
@@ -40,6 +43,9 @@ public:
     bool canUndo() const { return !m_undo.isEmpty(); }
     bool canRedo() const { return !m_redo.isEmpty(); }
     QString dataDirectory() const { return m_store.directory(); }
+    QString syncStatus() const { return m_syncStatus; }
+    bool syncProblem() const { return m_syncProblem; }
+    void setSyncStatus(const QString &status, bool problem);
     Store &store() { return m_store; }
     bool overlayActive() const { return m_overlayActive; }
     void setOverlayActive(bool active) {
@@ -53,6 +59,7 @@ public:
     Q_INVOKABLE int add(const QString &text, const QString &dueText);
     Q_INVOKABLE bool update(int id, const QString &text, const QString &dueText);
     Q_INVOKABLE bool remove(int id);
+    Q_INVOKABLE bool setDone(int id, bool done);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
     // "" when the text reads as a due time (or is empty), else what is wrong.
@@ -88,6 +95,9 @@ signals:
     void recordingChanged();
     void messageChanged();
     void undoChanged();
+    void syncStatusChanged();
+    // The user changed a reminder here; the sync pushes it soon.
+    void localChanged();
     // Select this reminder and open it for editing (after a voice memo).
     void editRequested(int id);
     // The overlay window should be shown again from scratch (to take focus).
@@ -102,6 +112,7 @@ private:
     void rememberFile();
     void scheduleDue();
     QSet<QString> undoClips() const;
+    static QList<Reminder> stamped(QList<Reminder> target, const QList<Reminder> &current);
     void notify(const Reminder &reminder);
 
     Store m_store;
@@ -115,6 +126,8 @@ private:
     QString m_message;
     bool m_messageIsError = false;
     QString m_lastError;
+    QString m_syncStatus;
+    bool m_syncProblem = false;
     QByteArray m_lastFile;
     QFileSystemWatcher m_watcher;
     QTimer m_fileDebounce, m_dueTimer, m_retentionTimer;

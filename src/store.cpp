@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
+#include <QRandomGenerator>
 #include <QSaveFile>
 #include <QStandardPaths>
 
@@ -22,14 +23,26 @@ QDateTime Store::parseIso(const QString &text) {
     return time;
 }
 
+QString Store::newUid() {
+    static const char alphabet[] = "0123456789abcdefghijklmnopqrstuv";
+    QString uid;
+    for (int i = 0; i < 32; ++i)
+        uid += QChar(alphabet[QRandomGenerator::system()->bounded(32)]);
+    return uid;
+}
+
 QJsonObject Reminder::toJson() const {
     QJsonObject object{{"id", id},
+                       {"uid", uid},
                        {"text", text},
                        {"created", Store::isoString(created)},
                        {"due", due.isValid() ? QJsonValue(Store::isoString(due)) : QJsonValue()},
                        {"notified", notified},
                        {"clip", clip.isEmpty() ? QJsonValue() : QJsonValue(clip)},
-                       {"clipExpired", clipExpired}};
+                       {"clipExpired", clipExpired},
+                       {"done", done}};
+    if (updated.isValid())
+        object.insert("updated", Store::isoString(updated));
     if (clipRecorded.isValid())
         object.insert("clipRecorded", Store::isoString(clipRecorded));
     if (clipSeconds > 0)
@@ -48,6 +61,9 @@ Reminder Reminder::fromJson(const QJsonObject &object) {
     r.clipRecorded = Store::parseIso(object.value("clipRecorded").toString());
     r.clipSeconds = object.value("clipSeconds").toDouble();
     r.clipExpired = object.value("clipExpired").toBool();
+    r.uid = object.value("uid").toString();
+    r.done = object.value("done").toBool();
+    r.updated = Store::parseIso(object.value("updated").toString());
     return r;
 }
 
@@ -74,6 +90,7 @@ bool Store::ensureDirectories(QString *error) {
 
 bool Store::load(QString *error) {
     reminders.clear();
+    upgraded = false;
     nextId = 1;
     QFile file(filePath());
     if (!file.exists())
@@ -97,6 +114,15 @@ bool Store::load(QString *error) {
         Reminder reminder = Reminder::fromJson(value.toObject());
         if (reminder.id <= 0)
             continue;
+        // Files from 0.1 have neither; the next save keeps what is made here.
+        if (reminder.uid.isEmpty()) {
+            reminder.uid = newUid();
+            upgraded = true;
+        }
+        if (!reminder.updated.isValid()) {
+            reminder.updated = reminder.created.isValid() ? reminder.created : QDateTime::currentDateTimeUtc();
+            upgraded = true;
+        }
         highest = qMax(highest, reminder.id);
         reminders.append(reminder);
     }
@@ -158,6 +184,10 @@ int Store::add(Reminder reminder) {
     reminder.id = nextId++;
     if (!reminder.created.isValid())
         reminder.created = QDateTime::currentDateTime();
+    if (reminder.uid.isEmpty())
+        reminder.uid = newUid();
+    if (!reminder.updated.isValid())
+        reminder.updated = QDateTime::currentDateTimeUtc();
     reminders.append(reminder);
     return reminder.id;
 }

@@ -31,6 +31,10 @@ public:
     void keyDown(qint64 at);
     void keyUp(qint64 at);
 
+signals:
+    // `omni-reminder sync login|now` asks for a Google pass right away.
+    void syncRequested();
+
 private:
     void handle(class QLocalSocket *socket);
     void armTimer();
