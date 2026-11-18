@@ -45,7 +45,16 @@ Item {
         else
             editText.cursorPosition = editText.length
     }
-    onEditingChanged: if (editing) openEditor(true)
+    // When the edit ends the editor hides, so it must also give up focus;
+    // the list takes it back instead of a hidden field keeping it.
+    onEditingChanged: {
+        if (editing) {
+            openEditor(true)
+        } else {
+            editText.focus = false
+            editDue.focus = false
+        }
+    }
     // A row rebuilt mid-edit is not in the window yet when completed; focus it after.
     Component.onCompleted: if (editing) Qt.callLater(openEditor, false)
 

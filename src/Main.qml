@@ -34,7 +34,10 @@ ApplicationWindow {
     property real now: Date.now()
     property string playingUrl: ""
     // Letter shortcuts stand aside while the user types in a field.
-    readonly property bool typing: activeFocusItem !== null && activeFocusItem.cursorPosition !== undefined
+    // A hidden field (a row's editor after the edit ended) does not count:
+    // otherwise Esc and the letter shortcuts would stay disabled for good.
+    readonly property bool typing: activeFocusItem !== null && activeFocusItem.visible
+                                   && activeFocusItem.cursorPosition !== undefined
     readonly property var items: backend.reminders
     readonly property color panelColor: Qt.rgba(0.055, 0.055, 0.063, 0.86)
     readonly property color errorColor: "#ff6b6b"
