@@ -39,6 +39,7 @@ In the overlay:
 | `Delete` / `D` | Remove it (asks first: press again or Enter) |
 | `Space` / `P` | Play or pause its voice clip |
 | `R` | Start or stop a voice memo from the overlay |
+| `S` | Sync with Google now (same as the **Sync now** button beside the Google status; only once sync is set up) |
 | `Ctrl + Z` / `Ctrl + Shift + Z` | Undo / redo |
 | `Esc` / `Q` | Close the overlay |
 | `?` | Show every shortcut |
@@ -128,7 +129,8 @@ it shows up here within a few minutes, and the other way round.
   `omni-reminder sync now`. Without network nothing is lost or blocked: changes
   wait, and it retries after 30 s, 1, 2, 4, 8, then every 15 minutes. The
   overlay header shows the state ("Google: synced 14:05", "offline, 2 changes
-  waiting", or in red when you need to sign in again).
+  waiting", or in red when you need to sign in again), with a **Sync now**
+  button (or `S`) beside it.
 
 ### One-time setup: your own Google OAuth client
 

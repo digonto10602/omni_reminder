@@ -27,6 +27,8 @@ class Backend : public QObject {
     // One line on the Google sync, empty when it is not set up.
     Q_PROPERTY(QString syncStatus READ syncStatus NOTIFY syncStatusChanged)
     Q_PROPERTY(bool syncProblem READ syncProblem NOTIFY syncStatusChanged)
+    // True while a pass with Google runs, so the Sync now button can say so.
+    Q_PROPERTY(bool syncing READ syncing NOTIFY syncingChanged)
     // Whether the overlay window has keyboard focus; the window reports it.
     Q_PROPERTY(bool overlayActive READ overlayActive WRITE setOverlayActive NOTIFY overlayActiveChanged)
 
@@ -46,6 +48,13 @@ public:
     QString syncStatus() const { return m_syncStatus; }
     bool syncProblem() const { return m_syncProblem; }
     void setSyncStatus(const QString &status, bool problem);
+    bool syncing() const { return m_syncing; }
+    void setSyncing(bool syncing) {
+        if (syncing != m_syncing) {
+            m_syncing = syncing;
+            emit syncingChanged();
+        }
+    }
     Store &store() { return m_store; }
     bool overlayActive() const { return m_overlayActive; }
     void setOverlayActive(bool active) {
@@ -76,6 +85,8 @@ public:
     Q_INVOKABLE void toggleRecording() { emit recordToggleRequested(); }
     Q_INVOKABLE void stopRecording() { emit recordStopRequested(); }
     Q_INVOKABLE void cancelRecording() { emit recordCancelRequested(); }
+    // The overlay's Sync now button: the daemon's sync runs a pass right away.
+    Q_INVOKABLE void syncNow() { emit syncNowRequested(); }
 
     // Daemon side.
     void setRecordingState(const QString &state, int seconds = 0);
@@ -96,6 +107,8 @@ signals:
     void messageChanged();
     void undoChanged();
     void syncStatusChanged();
+    void syncingChanged();
+    void syncNowRequested();
     // The user changed a reminder here; the sync pushes it soon.
     void localChanged();
     // Select this reminder and open it for editing (after a voice memo).
@@ -128,6 +141,7 @@ private:
     QString m_lastError;
     QString m_syncStatus;
     bool m_syncProblem = false;
+    bool m_syncing = false;
     QByteArray m_lastFile;
     QFileSystemWatcher m_watcher;
     QTimer m_fileDebounce, m_dueTimer, m_retentionTimer;

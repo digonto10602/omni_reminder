@@ -986,6 +986,30 @@ private slots:
         QCOMPARE(rig.google.liveTasks().size(), 1);
     }
 
+    // The overlay's Sync now button (and S): the backend asks, the controller
+    // runs one pass, and the button reads "Syncing…" only while it runs.
+    void syncNowButtonRunsAPassAndShowsItWhileRunning()
+    {
+        SyncRig rig;
+        rig.add("From the button");
+        Backend backend(rig.data.path());
+        Sync::Controller controller(rig.data.path());
+        QObject::connect(&backend, &Backend::syncNowRequested, &controller, &Sync::Controller::syncNow);
+        QObject::connect(&controller, &Sync::Controller::passStarted, &backend, [&backend] { backend.setSyncing(true); });
+        QObject::connect(&controller, &Sync::Controller::passFinished, &backend, [&backend] { backend.setSyncing(false); });
+        QSignalSpy syncing(&backend, &Backend::syncingChanged);
+        QSignalSpy passes(&controller, &Sync::Controller::passFinished);
+        QVERIFY(!backend.syncing());
+        backend.syncNow();
+        QVERIFY(backend.syncing()); // set as soon as the pass starts
+        QTRY_VERIFY_WITH_TIMEOUT(passes.count() == 1, 10000);
+        QVERIFY(!backend.syncing());
+        QCOMPARE(syncing.count(), 2);
+        QCOMPARE(controller.status().state, QString("ok"));
+        QMutexLocker lock(&rig.google.mutex());
+        QCOMPARE(rig.google.liveTasks().size(), 1);
+    }
+
     void syncRefreshesTheAccessTokenAndAsksForLoginWhenRevoked()
     {
         SyncRig rig;

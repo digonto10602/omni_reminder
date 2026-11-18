@@ -131,6 +131,7 @@ public:
 
 signals:
     void statusChanged(const QString &line, bool problem);
+    void passStarted();
     void passFinished();
 
 private:

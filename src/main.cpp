@@ -19,7 +19,7 @@
 #include "theme.h"
 #include "translator.h"
 
-static const char *Version = "0.2.0";
+static const char *Version = "0.2.1";
 
 int main(int argc, char *argv[]) {
     // Taken before anything else, so a key press is timed as close to the
@@ -83,6 +83,9 @@ int main(int argc, char *argv[]) {
     QObject::connect(&daemon, &Daemon::syncRequested, &sync, &Sync::Controller::syncNow);
     QObject::connect(&sync, &Sync::Controller::statusChanged, &backend, &Backend::setSyncStatus);
     QObject::connect(&sync, &Sync::Controller::passFinished, &backend, &Backend::reload);
+    QObject::connect(&backend, &Backend::syncNowRequested, &sync, &Sync::Controller::syncNow);
+    QObject::connect(&sync, &Sync::Controller::passStarted, &backend, [&backend] { backend.setSyncing(true); });
+    QObject::connect(&sync, &Sync::Controller::passFinished, &backend, [&backend] { backend.setSyncing(false); });
     backend.setSyncStatus(Sync::Controller::describe(sync.status()),
                           sync.status().state != "ok" && sync.status().state != "not-configured" &&
                               sync.status().state != "never");

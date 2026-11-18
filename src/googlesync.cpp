@@ -707,6 +707,7 @@ void Controller::start() {
     }
     m_running = true;
     m_next.stop();
+    emit passStarted();
     // The engine keeps its access token between passes.
     QMetaObject::invokeMethod(m_worker, [this] {
         m_engine->sentBodies.clear();

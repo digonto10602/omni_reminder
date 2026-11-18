@@ -220,6 +220,7 @@ ApplicationWindow {
     }
     Shortcut { sequences: ["Space", "P"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: win.togglePlay() }
     Shortcut { sequences: ["R"]; context: Qt.ApplicationShortcut; enabled: !win.typing; onActivated: backend.toggleRecording() }
+    Shortcut { sequences: ["S"]; context: Qt.ApplicationShortcut; enabled: !win.typing && backend.syncStatus !== "" && !backend.syncing; onActivated: backend.syncNow() }
     Shortcut {
         sequences: ["X"]
         context: Qt.ApplicationShortcut
@@ -295,6 +296,16 @@ ApplicationWindow {
                         font.pixelSize: 13
                         elide: Text.ElideRight
                         Layout.maximumWidth: 420
+                    }
+                    // Only once Google sync is set up (the status line shows).
+                    Button {
+                        visible: backend.syncStatus !== ""
+                        enabled: !backend.syncing
+                        text: backend.syncing ? qsTr("Syncing…") : qsTr("Sync now")
+                        flat: true
+                        focusPolicy: Qt.NoFocus
+                        Material.roundedScale: theme.radius
+                        onClicked: backend.syncNow()
                     }
                     Label {
                         text: qsTr("Press ? for shortcuts")
@@ -488,7 +499,9 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     text: win.confirmId
                           ? qsTr("Remove this reminder? Enter or Delete removes it, Esc keeps it.")
-                          : qsTr("N new · Enter edit · X done · Delete remove · Space play · R record · Ctrl+Z undo · Esc close")
+                          : backend.syncStatus !== ""
+                            ? qsTr("N new · Enter edit · X done · Delete remove · Space play · R record · S sync · Ctrl+Z undo · Esc close")
+                            : qsTr("N new · Enter edit · X done · Delete remove · Space play · R record · Ctrl+Z undo · Esc close")
                 }
             }
         }
@@ -524,6 +537,7 @@ ApplicationWindow {
                             ["Delete / D", qsTr("Remove it (asks first)")],
                             ["Space / P", qsTr("Play or pause its voice clip")],
                             ["R", qsTr("Start or stop a voice memo")],
+                            ["S", qsTr("Sync with Google now")],
                             ["Ctrl+Z / Ctrl+Shift+Z", qsTr("Undo / redo")],
                             ["Esc / Q", qsTr("Close the overlay")],
                             ["?", qsTr("Show or hide this list")]
