@@ -18,6 +18,7 @@
 #include "ipc.h"
 #include "retention.h"
 #include "schedule.h"
+#include "spokendue.h"
 #include "store.h"
 #include "theme.h"
 #include "transcriber.h"
@@ -464,6 +465,92 @@ private slots:
         QVERIFY(utcOk);
         QCOMPARE(parse("25:00"), QString("bad"));
         QCOMPARE(parse("whenever"), QString("bad"));
+    }
+
+    // ---------- due times inside spoken text (voice memos) ----------
+
+    void spokenDueTimesAreFound_data()
+    {
+        QTest::addColumn<QString>("said");
+        QTest::addColumn<QTime>("at");      // "now"; the day is Wednesday 18 Nov 2026
+        QTest::addColumn<QDateTime>("due"); // invalid: no due time
+        const QDate wed(2026, 11, 18);
+        const QTime morning(10, 30);
+        auto on = [](int month, int day, int h, int m, int year = 2026) {
+            return QDateTime(QDate(year, month, day), QTime(h, m));
+        };
+        // English, as Superwhisper writes it.
+        QTest::newRow("date, ordinal day first") << "Set a reminder on the 18th November." << QTime(7, 0) << on(11, 18, 9, 0);
+        QTest::newRow("tomorrow, no time") << "Set a reminder to buy chocolates for my wife tomorrow." << morning << on(11, 19, 9, 0);
+        QTest::newRow("tomorrow, dotted pm") << "Call the bank tomorrow at 5 p.m." << morning << on(11, 19, 17, 0);
+        QTest::newRow("month first, am") << "Dentist on November 25th at 10:30 am" << morning << on(11, 25, 10, 30);
+        QTest::newRow("passed date is next year") << "Renew the passport on May 5th" << morning << on(5, 5, 9, 0, 2027);
+        QTest::newRow("day of month only") << "Pay the rent on the 1st" << morning << on(12, 1, 9, 0);
+        QTest::newRow("weekday with bare hour") << "Meeting on Friday at 3" << morning << on(11, 20, 15, 0);
+        QTest::newRow("in minutes") << "Remind me in 10 minutes to check the oven" << morning << on(11, 18, 10, 40);
+        QTest::newRow("in hour words") << "in two hours call back" << morning << on(11, 18, 12, 30);
+        QTest::newRow("in half an hour") << "take the pizza out in half an hour" << morning << on(11, 18, 11, 0);
+        QTest::newRow("bare hour, next to come") << "call mom at 9" << morning << on(11, 18, 21, 0);
+        QTest::newRow("bare hour later today") << "call mom at 11" << morning << on(11, 18, 11, 0);
+        QTest::newRow("tonight") << "watch the match tonight" << morning << on(11, 18, 20, 0);
+        QTest::newRow("next weekday, part of day") << "next Monday morning send the report" << morning << on(11, 23, 9, 0);
+        QTest::newRow("in days with time") << "in 3 days at 8 am go to the gym" << morning << on(11, 21, 8, 0);
+        QTest::newRow("hour words with pm") << "five thirty pm tomorrow pick up the kids" << morning << on(11, 19, 17, 30);
+        QTest::newRow("half past") << "half past four tomorrow" << morning << on(11, 19, 16, 30);
+        QTest::newRow("evening hour") << "tomorrow 7 in the evening dinner" << morning << on(11, 19, 19, 0);
+        QTest::newRow("noon") << "lunch with Sam at noon" << morning << on(11, 18, 12, 0);
+        QTest::newRow("day after tomorrow") << "the day after tomorrow water the plants" << morning << on(11, 20, 9, 0);
+        QTest::newRow("passed time goes to tomorrow") << "take the pills at 8 am" << morning << on(11, 19, 8, 0);
+        QTest::newRow("no date") << "Remember to get some groceries." << morning << QDateTime();
+        QTest::newRow("a count is not a time") << "buy 3 apples and 2 bananas" << morning << QDateTime();
+        QTest::newRow("may as a verb") << "I may call him" << morning << QDateTime();
+        // Bengali.
+        QTest::newRow("bn tomorrow afternoon at 5") << QString::fromUtf8("আগামীকাল বিকেল ৫টায় ব্যাংকে ফোন করতে হবে") << morning << on(11, 19, 17, 0);
+        QTest::newRow("bn kal morning") << QString::fromUtf8("কাল সকালে ওষুধ খেতে হবে") << morning << on(11, 19, 9, 0);
+        QTest::newRow("bn morning is not kal") << QString::fromUtf8("সকালে দুধ কিনতে হবে") << QTime(7, 0) << on(11, 18, 9, 0);
+        QTest::newRow("bn date with ordinal") << QString::fromUtf8("২৫শে নভেম্বর ডাক্তারের কাছে যেতে হবে") << morning << on(11, 25, 9, 0);
+        QTest::newRow("bn month then day") << QString::fromUtf8("ডিসেম্বরের ৩ তারিখে বিল দিতে হবে") << morning << on(12, 3, 9, 0);
+        QTest::newRow("bn weekday night") << QString::fromUtf8("শুক্রবার রাত ৮টায় দাওয়াত") << morning << on(11, 20, 20, 0);
+        QTest::newRow("bn minutes from now") << QString::fromUtf8("১০ মিনিট পরে চুলা বন্ধ করতে হবে") << morning << on(11, 18, 10, 40);
+        QTest::newRow("bn hour words") << QString::fromUtf8("দুই ঘণ্টা পরে মাকে ফোন") << morning << on(11, 18, 12, 30);
+        QTest::newRow("bn half past three") << QString::fromUtf8("সাড়ে তিনটায় মিটিং") << morning << on(11, 18, 15, 30);
+        QTest::newRow("bn day after tomorrow midday") << QString::fromUtf8("পরশু দুপুর দুইটায় অফিসে যেতে হবে") << morning << on(11, 20, 14, 0);
+        QTest::newRow("bn ekta is 'a', not 1 o'clock") << QString::fromUtf8("একটা রিমাইন্ডার সেট করো বাজার করতে হবে") << morning << QDateTime();
+        QTest::newRow("bn decomposed ya") << QString::fromUtf8("আজ রাত ১০ট\xe0\xa6\xbe\xe0\xa6\xaf\xe0\xa6\xbc ঘুমাতে হবে") << morning << on(11, 18, 22, 0);
+        QTest::newRow("mixed bn and en") << QString::fromUtf8("tomorrow সকাল ১০টায় meeting আছে") << morning << on(11, 19, 10, 0);
+        Q_UNUSED(wed);
+    }
+
+    void spokenDueTimesAreFound()
+    {
+        QFETCH(QString, said);
+        QFETCH(QTime, at);
+        QFETCH(QDateTime, due);
+        const QDateTime now(QDate(2026, 11, 18), at);
+        QString heard;
+        const QDateTime found = Schedule::findDue(said, now, &heard);
+        QVERIFY2(found.isValid() == due.isValid(), qPrintable(found.toString(Qt::ISODate) + " heard: " + heard));
+        if (due.isValid()) {
+            QCOMPARE(found.toString("yyyy-MM-dd HH:mm"), due.toString("yyyy-MM-dd HH:mm"));
+            QVERIFY(!heard.isEmpty());
+        }
+    }
+
+    void voiceMemoTakesTheDueTimeFromWhatWasSaid()
+    {
+        QTemporaryDir dir;
+        Backend backend(dir.path());
+        const QDateTime recorded = QDateTime::currentDateTime();
+        const int id = backend.addVoiceMemo(dir.path() + "/none.ogg", recorded, 2.0, "Call the bank tomorrow at 5 pm", {});
+        QVERIFY(id > 0);
+        const Reminder *r = backend.store().find(id);
+        QVERIFY(r);
+        QCOMPARE(r->due.toLocalTime(), QDateTime(QDate::currentDate().addDays(1), QTime(17, 0)));
+        QVERIFY(!backend.messageIsError());
+        QVERIFY(backend.message().contains("5 pm"));
+        const int plain = backend.addVoiceMemo(dir.path() + "/none.ogg", recorded, 2.0, "Get some groceries", {});
+        QVERIFY(backend.store().find(plain));
+        QVERIFY(!backend.store().find(plain)->due.isValid());
     }
 
     void overdueRemindersNotifyOnceOnStart()

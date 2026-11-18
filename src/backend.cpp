@@ -2,6 +2,7 @@
 
 #include "retention.h"
 #include "schedule.h"
+#include "spokendue.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -362,12 +363,17 @@ int Backend::addVoiceMemo(const QString &clipPath, const QDateTime &recorded, do
     int id = 0;
     const QString name = QFileInfo(clipPath).fileName();
     const bool hasClip = QFileInfo::exists(clipPath);
+    // A day or time said in the memo ("tomorrow at 5", "২৫শে নভেম্বর") becomes
+    // its due time; the overlay opens the reminder for editing right after.
+    QString heard;
+    const QDateTime due = Schedule::findDue(text, QDateTime::currentDateTime(), &heard);
     mutate([&](Store &store) {
         Reminder r;
         r.text = text.trimmed().isEmpty()
                      ? tr("Voice memo %1").arg(QLocale().toString(recorded.toLocalTime(), QLocale::ShortFormat))
                      : text.trimmed();
         r.created = recorded;
+        r.due = due;
         if (hasClip) {
             r.clip = name;
             r.clipRecorded = recorded;
@@ -378,6 +384,10 @@ int Backend::addVoiceMemo(const QString &clipPath, const QDateTime &recorded, do
     }, true);
     if (!problem.isEmpty())
         showMessage(tr("Saved as a voice memo without text: %1").arg(problem), true);
+    else if (due.isValid())
+        showMessage(tr("Due %1, from \u201c%2\u201d. Edit it if that is not what you meant.")
+                        .arg(QLocale().toString(due.toLocalTime(), QLocale::ShortFormat), heard),
+                    false);
     else
         clearMessage();
     runRetention();

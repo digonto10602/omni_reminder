@@ -53,6 +53,27 @@ passed), `9pm`, `tomorrow`, `tomorrow 8:15`, `today 23:00`, `+10m`, `+2h`,
 `+3d`, `in 10 min`, `2026-12-01 14:00`, or any ISO 8601 time. Leave it empty
 for a plain list item.
 
+A voice memo takes its due time from what you say, in English or Bengali,
+anywhere in the sentence: "call the bank tomorrow at 5 pm", "dentist on the
+25th November", "in 10 minutes", "Friday at 3", "next Monday morning",
+"আগামীকাল বিকেল ৫টায়", "২৫শে নভেম্বর", "১০ মিনিট পরে", "সাড়ে তিনটায়". The
+overlay then says which words it read and opens the reminder for editing, so
+a wrong guess is one keystroke away from fixed. The rules:
+
+- a day without a time is 09:00; a part of the day without a time is morning
+  09:00, afternoon 15:00 (বিকেল 16:00, দুপুর 13:00), evening 18:00, night
+  21:00, tonight 20:00;
+- a time without a day is the next time it comes round;
+- an hour without am/pm or a part of the day ("Friday at 3") is the
+  afternoon for 1 to 6 when a day is named, otherwise the next one to come
+  ("at 9" said at 10:30 is 21:00);
+- a date already past this year is next year's;
+- "পাঁচটা" alone can mean "five (things)", so a Bengali hour counts only as
+  "পাঁচটায়", with a part of the day ("বিকেল পাঁচটা"), "সাড়ে"/"সোয়া"/"পৌনে",
+  or "বাজে".
+
+Typed reminders are left alone: their time goes in the time field.
+
 ## Voice clips
 
 Clips are Opus in an Ogg file, mono, 32 kbit/s (about 240 kB a minute).

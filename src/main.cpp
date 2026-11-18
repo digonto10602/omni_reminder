@@ -19,7 +19,7 @@
 #include "theme.h"
 #include "translator.h"
 
-static const char *Version = "0.2.1";
+static const char *Version = "0.2.2";
 
 int main(int argc, char *argv[]) {
     // Taken before anything else, so a key press is timed as close to the

@@ -15,6 +15,7 @@ HEADERS += \
     src/recorder.h \
     src/retention.h \
     src/schedule.h \
+    src/spokendue.h \
     src/store.h \
     src/theme.h \
     src/transcriber.h \
@@ -32,6 +33,7 @@ SOURCES += \
     src/recorder.cpp \
     src/retention.cpp \
     src/schedule.cpp \
+    src/spokendue.cpp \
     src/store.cpp \
     src/theme.cpp \
     src/transcriber.cpp \
