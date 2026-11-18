@@ -1,6 +1,6 @@
 pkgname=omni-reminder
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Transparent reminder overlay for Omarchy with hold-to-record voice memos'
 arch=('x86_64' 'aarch64')
 license=('MIT')
