@@ -8,4 +8,4 @@ superwhisper-bin) were already present, so none were added.
 | Date | Package | Version | Source | Why |
 | --- | --- | --- | --- | --- |
 | 2026-11-17 | omni-reminder | 0.1.0-1 | built locally from `pkgbuild/` (`makepkg -f`, then `pkexec pacman -U`) | the app itself, so it is on PATH and in the app launcher |
-| 2026-11-17 | omni-reminder | 0.1.0-2 | local build (pkexec pacman -U) | coordinator | Esc fix |
+| 2026-11-17 | omni-reminder | 0.1.0-2 | built locally from `pkgbuild/` (`makepkg -f`, then `pkexec pacman -U`) | fix: Esc closes the overlay after an edit |
