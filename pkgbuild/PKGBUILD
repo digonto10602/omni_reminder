@@ -1,11 +1,12 @@
 pkgname=omni-reminder
-pkgver=0.1.0
-pkgrel=2
-pkgdesc='Transparent reminder overlay for Omarchy with hold-to-record voice memos'
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Transparent reminder overlay for Omarchy with hold-to-record voice memos and Google sync'
 arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'qt6-multimedia' 'ffmpeg' 'libnotify' 'pipewire-pulse')
-optdepends=('superwhisper-bin: turn voice memos into text')
+optdepends=('superwhisper-bin: turn voice memos into text'
+            'libsecret: keep the Google sign-in in the desktop keyring (secret-tool)')
 makedepends=('gcc' 'make')
 source=()
 sha256sums=()
